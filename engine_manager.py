@@ -1,8 +1,10 @@
 import os
+import sys
 import time
 import json
 import subprocess
 import atexit
+import signal
 import logging
 import urllib.request
 import urllib.error
@@ -10,6 +12,72 @@ from config import config, load_config, LLAMA_SERVER_EXE, BIN_DIR
 
 logging.basicConfig(level=logging.INFO, format="[%(asctime)s] %(levelname)s: %(message)s")
 logger = logging.getLogger("backend_manager")
+
+def assign_job_object_kill_on_close(proc: subprocess.Popen):
+    """Binds child process to a Windows Job Object with KILL_ON_JOB_CLOSE policy.
+    Guarantees OS kernel terminates llama-server even if Python is killed or console is closed.
+    """
+    if sys.platform != "win32":
+        return
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        kernel32 = ctypes.WinDLL('kernel32', use_last_error=True)
+        job = kernel32.CreateJobObjectW(None, None)
+        if not job:
+            return
+
+        # JOBOBJECT_EXTENDED_LIMIT_INFORMATION
+        class IO_COUNTERS(ctypes.Structure):
+            _fields_ = [
+                ('ReadOperationCount', ctypes.c_uint64),
+                ('WriteOperationCount', ctypes.c_uint64),
+                ('OtherOperationCount', ctypes.c_uint64),
+                ('ReadTransferCount', ctypes.c_uint64),
+                ('WriteTransferCount', ctypes.c_uint64),
+                ('OtherTransferCount', ctypes.c_uint64),
+            ]
+
+        class JOBOBJECT_BASIC_LIMIT_INFORMATION(ctypes.Structure):
+            _fields_ = [
+                ('PerProcessUserTimeLimit', wintypes.LARGE_INTEGER),
+                ('PerJobUserTimeLimit', wintypes.LARGE_INTEGER),
+                ('LimitFlags', wintypes.DWORD),
+                ('MinimumWorkingSetSize', ctypes.c_size_t),
+                ('MaximumWorkingSetSize', ctypes.c_size_t),
+                ('ActiveProcessLimit', wintypes.DWORD),
+                ('Affinity', ctypes.c_size_t),
+                ('PriorityClass', wintypes.DWORD),
+                ('SchedulingClass', wintypes.DWORD),
+            ]
+
+        class JOBOBJECT_EXTENDED_LIMIT_INFORMATION(ctypes.Structure):
+            _fields_ = [
+                ('BasicLimitInformation', JOBOBJECT_BASIC_LIMIT_INFORMATION),
+                ('IoInfo', IO_COUNTERS),
+                ('ProcessMemoryLimit', ctypes.c_size_t),
+                ('JobMemoryLimit', ctypes.c_size_t),
+                ('PeakProcessMemoryLimit', ctypes.c_size_t),
+                ('PeakJobMemoryLimit', ctypes.c_size_t),
+            ]
+
+        JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x2000
+        JobObjectExtendedLimitInformation = 9
+
+        info = JOBOBJECT_EXTENDED_LIMIT_INFORMATION()
+        info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+
+        kernel32.SetInformationJobObject(
+            job,
+            JobObjectExtendedLimitInformation,
+            ctypes.byref(info),
+            ctypes.sizeof(info)
+        )
+
+        kernel32.AssignProcessToJobObject(job, int(proc._handle))
+    except Exception as e:
+        logger.debug(f"Job object binding note: {e}")
 
 class BackendManager:
     def __init__(self):
@@ -67,6 +135,9 @@ class BackendManager:
             stderr=subprocess.STDOUT
         )
 
+        # Bind Windows Job Object so child process terminates on exit/kill
+        assign_job_object_kill_on_close(self.process)
+
         atexit.register(self.stop)
         self._wait_until_ready()
         self._warmup_and_verify_vram()
@@ -117,12 +188,15 @@ class BackendManager:
 
     def stop(self):
         if self.process and self.process.poll() is None:
-            logger.info("Shutting down backend process...")
-            self.process.terminate()
+            logger.info("Gracefully stopping GTX 1080 Ti backend engine...")
             try:
-                self.process.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                self.process.kill()
+                self.process.terminate()
+                self.process.wait(timeout=3)
+            except Exception:
+                try:
+                    self.process.kill()
+                except Exception:
+                    pass
             self.process = None
 
     def restart(self):
