@@ -8,7 +8,7 @@ BIN_DIR = os.path.join(BASE_DIR, "bin")
 LLAMA_SERVER_EXE = os.path.join(BIN_DIR, "llama-server.exe")
 
 class ServerConfig(BaseModel):
-    # Server Gateway
+    # Server Gateway & Ports
     host: str = "0.0.0.0"
     port: int = 8000
     backend_host: str = "127.0.0.1"
@@ -42,16 +42,16 @@ def load_config() -> ServerConfig:
         except Exception as e:
             print(f"Warning: Failed to parse config.json: {e}")
 
-    srv = cfg_data.get("server", {})
-    mdl = cfg_data.get("model", {})
-    hw = cfg_data.get("hardware", {})
-    smp = cfg_data.get("sampling", {})
+    srv = cfg_data.get("server_network", cfg_data.get("server", {}))
+    mdl = cfg_data.get("model_settings", cfg_data.get("model", {}))
+    hw = cfg_data.get("hardware_gtx1080_settings", cfg_data.get("hardware", {}))
+    smp = cfg_data.get("generation_defaults", cfg_data.get("sampling", {}))
 
     model_file = mdl.get("model_file", "models/gemma-3n-E4B-it-Q4_K_M.gguf")
     if not os.path.isabs(model_file):
         model_file = os.path.normpath(os.path.join(BASE_DIR, model_file))
 
-    mmproj_file = mdl.get("mmproj_file", "")
+    mmproj_file = mdl.get("vision_projector_file", mdl.get("mmproj_file", ""))
     if mmproj_file and not os.path.isabs(mmproj_file):
         mmproj_file = os.path.normpath(os.path.join(BASE_DIR, mmproj_file))
 
@@ -67,24 +67,28 @@ def load_config() -> ServerConfig:
         except Exception as e:
             print(f"Warning: Could not read system prompt file: {e}")
 
+    # Port can be specified as chat_interface_port or openai_compatible_api_port
+    main_port = srv.get("openai_compatible_api_port", srv.get("chat_interface_port", srv.get("port", 8000)))
+    backend_port = srv.get("internal_gpu_engine_port", srv.get("backend_port", 8081))
+
     return ServerConfig(
         host=srv.get("host", "0.0.0.0"),
-        port=int(srv.get("port", 8000)),
+        port=int(main_port),
         backend_host="127.0.0.1",
-        backend_port=int(srv.get("backend_port", 8081)),
+        backend_port=int(backend_port),
         model_path=model_file,
-        model_alias=mdl.get("model_alias", "gemma-3n-e4b"),
+        model_alias=mdl.get("model_display_name", mdl.get("model_alias", "gemma-3n-e4b")),
         mmproj_file=mmproj_file,
         system_prompt_file=sys_prompt_file,
         system_prompt=sys_prompt_content,
-        n_gpu_layers=int(hw.get("n_gpu_layers", 99)),
-        n_ctx=int(hw.get("n_ctx", 8192)),
-        n_batch=int(hw.get("n_batch", 512)),
-        n_threads=int(hw.get("n_threads", 4)),
+        n_gpu_layers=int(hw.get("gpu_layers_offload", hw.get("n_gpu_layers", 99))),
+        n_ctx=int(hw.get("context_size_tokens", hw.get("n_ctx", 8192))),
+        n_batch=int(hw.get("prompt_batch_size", hw.get("n_batch", 512))),
+        n_threads=int(hw.get("cpu_worker_threads", hw.get("n_threads", 4))),
         temperature=float(smp.get("temperature", 0.7)),
         top_p=float(smp.get("top_p", 0.95)),
         top_k=int(smp.get("top_k", 40)),
-        max_tokens=int(smp.get("max_tokens", 2048))
+        max_tokens=int(smp.get("max_tokens_to_generate", smp.get("max_tokens", 2048)))
     )
 
 config = load_config()

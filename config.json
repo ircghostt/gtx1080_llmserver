@@ -1,25 +1,26 @@
 {
-  "server": {
+  "server_network": {
     "host": "0.0.0.0",
-    "port": 8000,
-    "backend_port": 8081
+    "chat_interface_port": 8000,
+    "openai_compatible_api_port": 8000,
+    "internal_gpu_engine_port": 8081
   },
-  "model": {
+  "model_settings": {
     "model_file": "models/gemma-3n-E4B-it-Q4_K_M.gguf",
-    "model_alias": "gemma-3n-e4b",
-    "mmproj_file": "models/mmproj.gguf",
+    "model_display_name": "gemma-3n-e4b",
+    "vision_projector_file": "models/mmproj.gguf",
     "system_prompt_file": "system_prompt.txt"
   },
-  "hardware": {
-    "n_gpu_layers": 99,
-    "n_ctx": 8192,
-    "n_batch": 512,
-    "n_threads": 4
+  "hardware_gtx1080_settings": {
+    "gpu_layers_offload": 99,
+    "context_size_tokens": 8192,
+    "prompt_batch_size": 512,
+    "cpu_worker_threads": 4
   },
-  "sampling": {
+  "generation_defaults": {
     "temperature": 0.7,
     "top_p": 0.95,
     "top_k": 40,
-    "max_tokens": 2048
+    "max_tokens_to_generate": 2048
   }
 }
