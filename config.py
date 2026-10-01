@@ -1,0 +1,90 @@
+import os
+import json
+from pydantic import BaseModel
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+CONFIG_JSON_PATH = os.path.join(BASE_DIR, "config.json")
+BIN_DIR = os.path.join(BASE_DIR, "bin")
+LLAMA_SERVER_EXE = os.path.join(BIN_DIR, "llama-server.exe")
+
+class ServerConfig(BaseModel):
+    # Server Gateway
+    host: str = "0.0.0.0"
+    port: int = 8000
+    backend_host: str = "127.0.0.1"
+    backend_port: int = 8081
+
+    # Model configuration
+    model_path: str = os.path.join(BASE_DIR, "models", "gemma-3n-E4B-it-Q4_K_M.gguf")
+    model_alias: str = "gemma-3n-e4b"
+    mmproj_file: str = ""
+    system_prompt_file: str = os.path.join(BASE_DIR, "system_prompt.txt")
+    system_prompt: str = ""
+
+    # Hardware Tuning for GTX 1080 Ti
+    n_gpu_layers: int = 99
+    n_ctx: int = 8192
+    n_batch: int = 512
+    n_threads: int = 4
+
+    # Sampling Defaults
+    temperature: float = 0.7
+    top_p: float = 0.95
+    top_k: int = 40
+    max_tokens: int = 2048
+
+def load_config() -> ServerConfig:
+    cfg_data = {}
+    if os.path.exists(CONFIG_JSON_PATH):
+        try:
+            with open(CONFIG_JSON_PATH, "r", encoding="utf-8") as f:
+                cfg_data = json.load(f)
+        except Exception as e:
+            print(f"Warning: Failed to parse config.json: {e}")
+
+    srv = cfg_data.get("server", {})
+    mdl = cfg_data.get("model", {})
+    hw = cfg_data.get("hardware", {})
+    smp = cfg_data.get("sampling", {})
+
+    model_file = mdl.get("model_file", "models/gemma-3n-E4B-it-Q4_K_M.gguf")
+    if not os.path.isabs(model_file):
+        model_file = os.path.normpath(os.path.join(BASE_DIR, model_file))
+
+    mmproj_file = mdl.get("mmproj_file", "")
+    if mmproj_file and not os.path.isabs(mmproj_file):
+        mmproj_file = os.path.normpath(os.path.join(BASE_DIR, mmproj_file))
+
+    sys_prompt_file = mdl.get("system_prompt_file", "system_prompt.txt")
+    if not os.path.isabs(sys_prompt_file):
+        sys_prompt_file = os.path.normpath(os.path.join(BASE_DIR, sys_prompt_file))
+
+    sys_prompt_content = ""
+    if os.path.exists(sys_prompt_file):
+        try:
+            with open(sys_prompt_file, "r", encoding="utf-8") as f:
+                sys_prompt_content = f.read().strip()
+        except Exception as e:
+            print(f"Warning: Could not read system prompt file: {e}")
+
+    return ServerConfig(
+        host=srv.get("host", "0.0.0.0"),
+        port=int(srv.get("port", 8000)),
+        backend_host="127.0.0.1",
+        backend_port=int(srv.get("backend_port", 8081)),
+        model_path=model_file,
+        model_alias=mdl.get("model_alias", "gemma-3n-e4b"),
+        mmproj_file=mmproj_file,
+        system_prompt_file=sys_prompt_file,
+        system_prompt=sys_prompt_content,
+        n_gpu_layers=int(hw.get("n_gpu_layers", 99)),
+        n_ctx=int(hw.get("n_ctx", 8192)),
+        n_batch=int(hw.get("n_batch", 512)),
+        n_threads=int(hw.get("n_threads", 4)),
+        temperature=float(smp.get("temperature", 0.7)),
+        top_p=float(smp.get("top_p", 0.95)),
+        top_k=int(smp.get("top_k", 40)),
+        max_tokens=int(smp.get("max_tokens", 2048))
+    )
+
+config = load_config()

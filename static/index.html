@@ -1,0 +1,616 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GTX 1080 Ti Local LLM Hub</title>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/core.min.js"></script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/styles/github-dark.min.css">
+  <style>
+    :root {
+      --bg-primary: #0f172a;
+      --bg-secondary: #1e293b;
+      --bg-tertiary: #334155;
+      --accent-color: #38bdf8;
+      --accent-hover: #0284c7;
+      --danger-color: #ef4444;
+      --danger-hover: #dc2626;
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --border-color: #334155;
+      --user-bubble: #2563eb;
+      --assistant-bubble: #1e293b;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background-color: var(--bg-primary);
+      color: var(--text-main);
+      height: 100vh;
+      display: flex;
+      overflow: hidden;
+    }
+    .sidebar {
+      width: 320px;
+      background: var(--bg-secondary);
+      border-right: 1px solid var(--border-color);
+      display: flex;
+      flex-direction: column;
+      padding: 1.25rem;
+      gap: 1.25rem;
+    }
+    .logo-container {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      font-weight: 700;
+      font-size: 1.15rem;
+      color: var(--accent-color);
+      padding-bottom: 0.75rem;
+      border-bottom: 1px solid var(--border-color);
+    }
+    .gpu-card {
+      background: #0f172a88;
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 1rem;
+      font-size: 0.85rem;
+    }
+    .gpu-card h4 {
+      color: #38bdf8;
+      margin-bottom: 0.5rem;
+      font-size: 0.9rem;
+      display: flex;
+      justify-content: space-between;
+    }
+    .stat-row {
+      display: flex;
+      justify-content: space-between;
+      margin-top: 0.35rem;
+      color: var(--text-muted);
+    }
+    .stat-row span:last-child {
+      color: var(--text-main);
+      font-weight: 600;
+    }
+    .progress-bar {
+      width: 100%;
+      height: 6px;
+      background: var(--bg-tertiary);
+      border-radius: 3px;
+      margin-top: 0.5rem;
+      overflow: hidden;
+    }
+    .progress-fill {
+      height: 100%;
+      background: #38bdf8;
+      width: 0%;
+      transition: width 0.3s ease;
+    }
+    .param-group {
+      display: flex;
+      flex-direction: column;
+      gap: 0.4rem;
+      font-size: 0.85rem;
+    }
+    .param-group label { color: var(--text-muted); }
+    .param-group input, .param-group textarea, .param-group select {
+      background: var(--bg-primary);
+      border: 1px solid var(--border-color);
+      color: var(--text-main);
+      padding: 0.5rem;
+      border-radius: 6px;
+      font-size: 0.85rem;
+    }
+    .param-group textarea { resize: vertical; height: 85px; }
+    .main-chat {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+    }
+    .chat-header {
+      padding: 1rem 1.5rem;
+      background: var(--bg-secondary);
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .badge {
+      background: #065f46;
+      color: #34d399;
+      padding: 0.25rem 0.6rem;
+      border-radius: 9999px;
+      font-size: 0.75rem;
+      font-weight: 600;
+    }
+    .messages-container {
+      flex: 1;
+      overflow-y: auto;
+      padding: 1.5rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1.25rem;
+    }
+    .message {
+      display: flex;
+      flex-direction: column;
+      gap: 0.4rem;
+      max-width: 80%;
+    }
+    .message.user {
+      align-self: flex-end;
+      align-items: flex-end;
+    }
+    .message.assistant {
+      align-self: flex-start;
+      align-items: flex-start;
+    }
+    .bubble {
+      padding: 0.9rem 1.1rem;
+      border-radius: 12px;
+      line-height: 1.55;
+      font-size: 0.95rem;
+      word-break: break-word;
+    }
+    .user .bubble {
+      background: var(--user-bubble);
+      color: #ffffff;
+      border-bottom-right-radius: 2px;
+    }
+    .assistant .bubble {
+      background: var(--assistant-bubble);
+      color: var(--text-main);
+      border: 1px solid var(--border-color);
+      border-bottom-left-radius: 2px;
+    }
+    .bubble-img {
+      max-width: 260px;
+      max-height: 200px;
+      border-radius: 8px;
+      margin-bottom: 0.5rem;
+      display: block;
+      border: 1px solid rgba(255,255,255,0.2);
+    }
+    .speed-badge {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+    }
+    /* Input Container */
+    .input-container {
+      padding: 1rem 1.25rem;
+      background: var(--bg-secondary);
+      border-top: 1px solid var(--border-color);
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+    .preview-bar {
+      display: flex;
+      gap: 0.5rem;
+      align-items: center;
+    }
+    .preview-bar:empty { display: none; }
+    .img-preview-card {
+      position: relative;
+      display: inline-block;
+    }
+    .img-preview-card img {
+      width: 56px;
+      height: 56px;
+      object-fit: cover;
+      border-radius: 6px;
+      border: 1px solid var(--accent-color);
+    }
+    .img-preview-card .remove-btn {
+      position: absolute;
+      top: -6px;
+      right: -6px;
+      background: var(--danger-color);
+      color: #fff;
+      border: none;
+      border-radius: 50%;
+      width: 18px;
+      height: 18px;
+      font-size: 11px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .input-row {
+      display: flex;
+      gap: 0.75rem;
+      align-items: center;
+    }
+    .attach-btn {
+      background: var(--bg-tertiary);
+      border: 1px solid var(--border-color);
+      color: var(--text-main);
+      border-radius: 8px;
+      width: 44px;
+      height: 44px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      font-size: 1.2rem;
+      transition: background 0.2s;
+    }
+    .attach-btn:hover { background: #475569; }
+    .input-row textarea {
+      flex: 1;
+      background: var(--bg-primary);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      color: var(--text-main);
+      padding: 0.75rem 1rem;
+      font-size: 0.95rem;
+      resize: none;
+      height: 46px;
+    }
+    .input-row textarea:focus { outline: 1px solid var(--accent-color); }
+    .action-btn {
+      border: none;
+      border-radius: 8px;
+      padding: 0 1.25rem;
+      height: 44px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+    .btn-send {
+      background: var(--accent-color);
+      color: #0f172a;
+    }
+    .btn-send:hover { background: var(--accent-hover); }
+    .btn-stop {
+      background: var(--danger-color);
+      color: #ffffff;
+    }
+    .btn-stop:hover { background: var(--danger-hover); }
+    pre { background: #0b1120; padding: 0.75rem; border-radius: 6px; overflow-x: auto; margin: 0.5rem 0; }
+    code { font-family: Consolas, monospace; font-size: 0.88rem; }
+  </style>
+</head>
+<body>
+
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="logo-container">
+      <span>⚡ GTX 1080 Ti Server</span>
+    </div>
+
+    <div class="gpu-card">
+      <h4>GPU Telemetry <span id="gpuTemp">--°C</span></h4>
+      <div class="stat-row">
+        <span>Device</span>
+        <span id="gpuName">GTX 1080 Ti</span>
+      </div>
+      <div class="stat-row">
+        <span>VRAM Used</span>
+        <span id="vramUsage">-- / 11264 MB</span>
+      </div>
+      <div class="progress-bar">
+        <div id="vramProgress" class="progress-fill"></div>
+      </div>
+      <div class="stat-row" style="margin-top: 0.5rem;">
+        <span>Core Load</span>
+        <span id="gpuUtil">--%</span>
+      </div>
+    </div>
+
+    <div class="param-group">
+      <label>System Instructions (system_prompt.txt)</label>
+      <textarea id="sysPrompt" placeholder="Loading prompt..."></textarea>
+    </div>
+
+    <div class="param-group">
+      <label>Temperature (<span id="tempVal">0.7</span>)</label>
+      <input type="range" id="tempSlider" min="0" max="1" step="0.05" value="0.7" oninput="document.getElementById('tempVal').innerText=this.value">
+    </div>
+
+    <div class="param-group">
+      <label>Max Tokens</label>
+      <input type="number" id="maxTokens" value="2048" step="128" min="128" max="8192">
+    </div>
+
+    <button onclick="clearChat()" style="background: transparent; border: 1px solid var(--border-color); color: var(--text-muted); padding: 0.5rem; border-radius: 6px; cursor: pointer; margin-top: auto;">Clear Conversation</button>
+  </aside>
+
+  <!-- Main Chat -->
+  <main class="main-chat">
+    <header class="chat-header">
+      <div>
+        <strong id="activeModel">Gemma 3n E4B (100% GPU Offload)</strong>
+        <p style="font-size: 0.75rem; color: var(--text-muted);">OpenAI Endpoint: <code>http://127.0.0.1:8000/v1/chat/completions</code></p>
+      </div>
+      <span class="badge">● CUDA 12.4 Online</span>
+    </header>
+
+    <div class="messages-container" id="messagesBox">
+      <div class="message assistant">
+        <div class="bubble">
+          👋 Welcome! The server is running on your <strong>GTX 1080 Ti (11 GB VRAM)</strong>. You can chat, upload photos 📷, or hit Stop anytime.
+        </div>
+      </div>
+    </div>
+
+    <div class="input-container">
+      <div class="preview-bar" id="previewBar"></div>
+      <div class="input-row">
+        <input type="file" id="fileInput" accept="image/*" style="display: none;" onchange="handleImageSelect(event)">
+        <button class="attach-btn" title="Attach Image" onclick="document.getElementById('fileInput').click()">📷</button>
+        <textarea id="userInput" placeholder="Ask anything... Paste images with Ctrl+V (Enter to send)"></textarea>
+        <button class="action-btn btn-send" id="actionBtn" onclick="handleAction()">Send</button>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    let chatHistory = [];
+    let isGenerating = false;
+    let currentAbortController = null;
+    let pendingBase64Image = null;
+
+    // Load initial config from config.json & system_prompt.txt
+    async function initConfig() {
+      try {
+        const res = await fetch('/api/config');
+        const data = await res.json();
+        if (data.system_prompt) document.getElementById('sysPrompt').value = data.system_prompt;
+        if (data.temperature !== undefined) {
+          document.getElementById('tempSlider').value = data.temperature;
+          document.getElementById('tempVal').innerText = data.temperature;
+        }
+        if (data.max_tokens) document.getElementById('maxTokens').value = data.max_tokens;
+        if (data.model_alias) document.getElementById('activeModel').innerText = data.model_alias + ' (100% GPU Offload)';
+      } catch (e) {}
+    }
+    initConfig();
+
+    // Poll GPU Telemetry
+    async function updateTelemetry() {
+      try {
+        const res = await fetch('/api/gpu-stats');
+        const data = await res.json();
+        if (data.vram_used_mb) {
+          document.getElementById('gpuName').innerText = data.gpu_name;
+          document.getElementById('gpuTemp').innerText = data.gpu_temp_c + '°C';
+          document.getElementById('vramUsage').innerText = Math.round(data.vram_used_mb) + ' / ' + Math.round(data.vram_total_mb) + ' MB';
+          document.getElementById('gpuUtil').innerText = data.gpu_util_pct + '%';
+          const pct = (data.vram_used_mb / data.vram_total_mb) * 100;
+          document.getElementById('vramProgress').style.width = pct + '%';
+        }
+      } catch (e) {}
+    }
+    setInterval(updateTelemetry, 2500);
+    updateTelemetry();
+
+    // Image Handlers
+    function handleImageSelect(event) {
+      const file = event.target.files[0];
+      if (file) processImageFile(file);
+    }
+
+    function processImageFile(file) {
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        pendingBase64Image = e.target.result;
+        renderImagePreview();
+      };
+      reader.readAsDataURL(file);
+    }
+
+    function renderImagePreview() {
+      const bar = document.getElementById('previewBar');
+      if (!pendingBase64Image) {
+        bar.innerHTML = '';
+        return;
+      }
+      bar.innerHTML = `
+        <div class="img-preview-card">
+          <img src="${pendingBase64Image}" alt="Uploaded image preview">
+          <button class="remove-btn" onclick="removeImage()">✕</button>
+        </div>
+      `;
+    }
+
+    function removeImage() {
+      pendingBase64Image = null;
+      document.getElementById('fileInput').value = '';
+      renderImagePreview();
+    }
+
+    // Clipboard Paste (Ctrl+V) Image Support
+    document.addEventListener('paste', function(e) {
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      for (const item of items) {
+        if (item.type.indexOf('image') !== -1) {
+          const file = item.getAsFile();
+          processImageFile(file);
+          break;
+        }
+      }
+    });
+
+    // Key Listener
+    document.getElementById('userInput').addEventListener('keydown', function(e) {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        handleAction();
+      }
+    });
+
+    function handleAction() {
+      if (isGenerating) {
+        stopGeneration();
+      } else {
+        sendMessage();
+      }
+    }
+
+    function setGeneratingState(generating) {
+      isGenerating = generating;
+      const btn = document.getElementById('actionBtn');
+      if (generating) {
+        btn.innerText = '■ Stop';
+        btn.className = 'action-btn btn-stop';
+      } else {
+        btn.innerText = 'Send';
+        btn.className = 'action-btn btn-send';
+      }
+    }
+
+    function stopGeneration() {
+      if (currentAbortController) {
+        currentAbortController.abort();
+        currentAbortController = null;
+      }
+      setGeneratingState(false);
+    }
+
+    function clearChat() {
+      chatHistory = [];
+      document.getElementById('messagesBox').innerHTML = `
+        <div class="message assistant">
+          <div class="bubble">Conversation cleared. Ready for your prompt!</div>
+        </div>
+      `;
+    }
+
+    async function sendMessage() {
+      const input = document.getElementById('userInput');
+      const text = input.value.trim();
+      if (!text && !pendingBase64Image) return;
+
+      const attachedImage = pendingBase64Image;
+      removeImage();
+      input.value = '';
+
+      // Format User Content for OpenAI API
+      let userApiContent;
+      if (attachedImage) {
+        userApiContent = [
+          { type: 'text', text: text || 'Please inspect this image.' },
+          { type: 'image_url', image_url: { url: attachedImage } }
+        ];
+      } else {
+        userApiContent = text;
+      }
+
+      appendMessage('user', text, attachedImage);
+      chatHistory.push({ role: 'user', content: userApiContent });
+
+      // Create Assistant Placeholder
+      const assistantBubble = appendMessage('assistant', '<span style="color:var(--text-muted);">Thinking...</span>');
+      const speedBadge = document.createElement('div');
+      speedBadge.className = 'speed-badge';
+      assistantBubble.parentElement.appendChild(speedBadge);
+
+      const sysPrompt = document.getElementById('sysPrompt').value.trim();
+      const messages = [];
+      if (sysPrompt) messages.push({ role: 'system', content: sysPrompt });
+      messages.push(...chatHistory);
+
+      currentAbortController = new AbortController();
+      setGeneratingState(true);
+
+      const startTime = performance.now();
+      let generatedText = '';
+      let tokenCount = 0;
+
+      try {
+        const response = await fetch('/v1/chat/completions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          signal: currentAbortController.signal,
+          body: JSON.stringify({
+            messages: messages,
+            temperature: parseFloat(document.getElementById('tempSlider').value),
+            max_tokens: parseInt(document.getElementById('maxTokens').value),
+            stream: true
+          })
+        });
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder('utf-8');
+        let buffer = '';
+
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop();
+
+          for (const line of lines) {
+            const trimmed = line.trim();
+            if (trimmed.startsWith('data: ') && trimmed !== 'data: [DONE]') {
+              try {
+                const parsed = JSON.parse(trimmed.slice(6));
+                const content = parsed.choices[0]?.delta?.content || '';
+                if (content) {
+                  generatedText += content;
+                  tokenCount++;
+                  assistantBubble.innerHTML = marked.parse(generatedText);
+                  const elapsedSec = (performance.now() - startTime) / 1000;
+                  const tokPerSec = (tokenCount / elapsedSec).toFixed(1);
+                  speedBadge.innerText = `⚡ ${tokPerSec} tok/s (${tokenCount} tokens)`;
+                }
+              } catch (err) {}
+            }
+          }
+          document.getElementById('messagesBox').scrollTop = document.getElementById('messagesBox').scrollHeight;
+        }
+
+        chatHistory.push({ role: 'assistant', content: generatedText });
+      } catch (err) {
+        if (err.name === 'AbortError') {
+          speedBadge.innerText += ' [Stopped by user]';
+        } else {
+          assistantBubble.innerHTML = `<span style="color:#ef4444;">Error: ${err.message}</span>`;
+        }
+      } finally {
+        setGeneratingState(false);
+        currentAbortController = null;
+        input.focus();
+      }
+    }
+
+    function appendMessage(role, textContent, imgUrl = null) {
+      const box = document.getElementById('messagesBox');
+      const msgDiv = document.createElement('div');
+      msgDiv.className = `message ${role}`;
+
+      const bubble = document.createElement('div');
+      bubble.className = 'bubble';
+
+      if (imgUrl) {
+        const img = document.createElement('img');
+        img.src = imgUrl;
+        img.className = 'bubble-img';
+        bubble.appendChild(img);
+      }
+
+      if (textContent) {
+        const textSpan = document.createElement('div');
+        textSpan.innerHTML = role === 'assistant' ? marked.parse(textContent) : textContent;
+        bubble.appendChild(textSpan);
+      }
+
+      msgDiv.appendChild(bubble);
+      box.appendChild(msgDiv);
+      box.scrollTop = box.scrollHeight;
+      return bubble;
+    }
+  </script>
+</body>
+</html>

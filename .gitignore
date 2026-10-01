@@ -1,0 +1,14 @@
+# Python virtual environment
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+
+# Binary runtimes and weights
+bin/
+models/*.gguf
+models/*.bin
+
+# Logs and temp
+*.log
+.DS_Store
