@@ -4,7 +4,7 @@ import time
 import subprocess
 import logging
 import asyncio
-import requests
+import httpx
 from typing import Optional
 from pydantic import BaseModel
 from fastapi import FastAPI, Request, Response, HTTPException
@@ -244,20 +244,17 @@ async def chat_completions(request: Request):
 
         if is_stream:
             async def stream_response():
-                resp = None
                 try:
-                    resp = requests.post(backend_url, json=body, stream=True, timeout=120)
-                    for chunk in resp.iter_content(chunk_size=None):
-                        if await request.is_disconnected():
-                            logger.info("Client aborted request. Halting generation.")
-                            break
-                        if chunk:
-                            yield chunk
+                    async with httpx.AsyncClient(timeout=120.0) as client:
+                        async with client.stream("POST", backend_url, json=body) as resp:
+                            async for chunk in resp.aiter_bytes():
+                                if await request.is_disconnected():
+                                    logger.info("Client aborted request. Halting generation.")
+                                    break
+                                if chunk:
+                                    yield chunk
                 except Exception as ex:
-                    logger.info(f"Stream ended/aborted: {ex}")
-                finally:
-                    if resp is not None:
-                        resp.close()
+                    logger.info(f"Stream finished/aborted: {ex}")
 
             return StreamingResponse(
                 stream_response(),
@@ -269,8 +266,9 @@ async def chat_completions(request: Request):
                 }
             )
         else:
-            resp = requests.post(backend_url, json=body, timeout=120)
-            return JSONResponse(status_code=resp.status_code, content=resp.json())
+            async with httpx.AsyncClient(timeout=120.0) as client:
+                resp = await client.post(backend_url, json=body)
+                return JSONResponse(status_code=resp.status_code, content=resp.json())
 
     except Exception as e:
         logger.error(f"Chat completion error: {e}", exc_info=True)
@@ -289,22 +287,22 @@ async def text_completions(request: Request):
 
         if is_stream:
             async def stream_response():
-                resp = None
                 try:
-                    resp = requests.post(backend_url, json=body, stream=True, timeout=120)
-                    for chunk in resp.iter_content(chunk_size=None):
-                        if await request.is_disconnected():
-                            break
-                        if chunk:
-                            yield chunk
-                finally:
-                    if resp is not None:
-                        resp.close()
+                    async with httpx.AsyncClient(timeout=120.0) as client:
+                        async with client.stream("POST", backend_url, json=body) as resp:
+                            async for chunk in resp.aiter_bytes():
+                                if await request.is_disconnected():
+                                    break
+                                if chunk:
+                                    yield chunk
+                except Exception as ex:
+                    logger.info(f"Stream finished/aborted: {ex}")
 
             return StreamingResponse(stream_response(), media_type="text/event-stream")
         else:
-            resp = requests.post(backend_url, json=body, timeout=120)
-            return JSONResponse(status_code=resp.status_code, content=resp.json())
+            async with httpx.AsyncClient(timeout=120.0) as client:
+                resp = await client.post(backend_url, json=body)
+                return JSONResponse(status_code=resp.status_code, content=resp.json())
     except Exception as e:
         logger.error(f"Completion error: {e}", exc_info=True)
         return JSONResponse(
