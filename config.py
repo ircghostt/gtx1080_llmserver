@@ -1,4 +1,5 @@
 import os
+import re
 import json
 from pydantic import BaseModel
 
@@ -33,12 +34,22 @@ class ServerConfig(BaseModel):
     top_k: int = 40
     max_tokens: int = 2048
 
+def sanitize_json_content(raw_str: str) -> dict:
+    """Parses JSON safely, repairing unescaped Windows backslashes if present."""
+    try:
+        return json.loads(raw_str)
+    except json.JSONDecodeError:
+        # Auto-escape single Windows backslashes that are not valid JSON escape sequences
+        repaired = re.sub(r'\\(?![/\\ntbrf"u])', r'\\\\', raw_str)
+        return json.loads(repaired)
+
 def load_config() -> ServerConfig:
     cfg_data = {}
     if os.path.exists(CONFIG_JSON_PATH):
         try:
             with open(CONFIG_JSON_PATH, "r", encoding="utf-8") as f:
-                cfg_data = json.load(f)
+                raw = f.read()
+            cfg_data = sanitize_json_content(raw)
         except Exception as e:
             print(f"Warning: Failed to parse config.json: {e}")
 
@@ -66,8 +77,9 @@ def load_config() -> ServerConfig:
                 sys_prompt_content = f.read().strip()
         except Exception as e:
             print(f"Warning: Could not read system prompt file: {e}")
+    else:
+        print(f"Warning: Specified system prompt file does not exist: {sys_prompt_file}")
 
-    # Port can be specified as chat_interface_port or openai_compatible_api_port
     main_port = srv.get("openai_compatible_api_port", srv.get("chat_interface_port", srv.get("port", 8000)))
     backend_port = srv.get("internal_gpu_engine_port", srv.get("backend_port", 8081))
 
