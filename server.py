@@ -5,13 +5,14 @@ import subprocess
 import logging
 import asyncio
 import requests
+from typing import Optional
 from pydantic import BaseModel
 from fastapi import FastAPI, Request, Response, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
-from config import config, load_config
+from config import config, load_config, CONFIG_JSON_PATH
 from engine_manager import manager
 
 logging.basicConfig(level=logging.INFO, format="[%(asctime)s] %(levelname)s: %(message)s")
@@ -36,8 +37,12 @@ if not os.path.exists(static_dir):
     os.makedirs(static_dir, exist_ok=True)
 app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
-class SavePromptRequest(BaseModel):
-    system_prompt: str
+class SaveConfigRequest(BaseModel):
+    temperature: Optional[float] = None
+    max_tokens: Optional[int] = None
+    top_p: Optional[float] = None
+    top_k: Optional[int] = None
+    system_prompt: Optional[str] = None
 
 @app.on_event("startup")
 def on_startup():
@@ -85,19 +90,59 @@ def get_current_config():
         "has_vision": has_vision
     }
 
-@app.post("/api/save-system-prompt")
-def save_system_prompt(payload: SavePromptRequest):
-    """Saves updated system prompt to system_prompt.txt and updates runtime memory"""
+@app.post("/api/save-config")
+def save_config(payload: SaveConfigRequest):
+    """Saves updated sampling parameters to config.json and system_prompt.txt"""
     try:
-        prompt_file = config.system_prompt_file
-        with open(prompt_file, "w", encoding="utf-8") as f:
-            f.write(payload.system_prompt.strip())
-        config.system_prompt = payload.system_prompt.strip()
-        logger.info(f"Updated system prompt saved to: {prompt_file}")
-        return {"status": "success", "message": "System prompt saved successfully"}
+        # 1. Update config.json on disk
+        cfg_data = {}
+        if os.path.exists(CONFIG_JSON_PATH):
+            with open(CONFIG_JSON_PATH, "r", encoding="utf-8") as f:
+                cfg_data = json.load(f)
+
+        if "generation_defaults" not in cfg_data:
+            cfg_data["generation_defaults"] = {}
+
+        if payload.temperature is not None:
+            cfg_data["generation_defaults"]["temperature"] = payload.temperature
+            config.temperature = payload.temperature
+
+        if payload.max_tokens is not None:
+            cfg_data["generation_defaults"]["max_tokens_to_generate"] = payload.max_tokens
+            config.max_tokens = payload.max_tokens
+
+        if payload.top_p is not None:
+            cfg_data["generation_defaults"]["top_p"] = payload.top_p
+            config.top_p = payload.top_p
+
+        if payload.top_k is not None:
+            cfg_data["generation_defaults"]["top_k"] = payload.top_k
+            config.top_k = payload.top_k
+
+        with open(CONFIG_JSON_PATH, "w", encoding="utf-8") as f:
+            json.dump(cfg_data, f, indent=2)
+
+        # 2. Update system_prompt.txt if provided
+        if payload.system_prompt is not None:
+            with open(config.system_prompt_file, "w", encoding="utf-8") as f:
+                f.write(payload.system_prompt.strip())
+            config.system_prompt = payload.system_prompt.strip()
+
+        logger.info("Updated settings successfully written to config.json and memory.")
+        return {
+            "status": "success",
+            "message": "Settings saved to config.json",
+            "temperature": config.temperature,
+            "max_tokens": config.max_tokens
+        }
     except Exception as e:
-        logger.error(f"Failed to save system prompt: {e}")
+        logger.error(f"Failed to save settings: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/save-system-prompt")
+def save_system_prompt(payload: SaveConfigRequest):
+    """Compatibility endpoint for prompt saving"""
+    return save_config(payload)
 
 @app.get("/api/gpu-stats")
 def gpu_stats():

@@ -105,27 +105,24 @@
       font-size: 0.85rem;
     }
     .param-group textarea { resize: vertical; height: 85px; }
-    .prompt-actions {
-      display: flex;
-      justify-content: flex-end;
-      margin-top: 0.25rem;
-    }
-    .btn-save-prompt {
-      background: var(--bg-tertiary);
-      border: 1px solid var(--border-color);
-      color: var(--text-main);
-      padding: 0.3rem 0.75rem;
-      border-radius: 5px;
-      font-size: 0.78rem;
+    .btn-save-settings {
+      background: #0284c7;
+      border: none;
+      color: #ffffff;
+      padding: 0.55rem;
+      border-radius: 6px;
+      font-size: 0.82rem;
       font-weight: 600;
       cursor: pointer;
       transition: all 0.2s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.4rem;
     }
-    .btn-save-prompt:hover { background: #475569; }
-    .btn-save-prompt.saved {
+    .btn-save-settings:hover { background: #0369a1; }
+    .btn-save-settings.saved {
       background: var(--success-color);
-      color: #ffffff;
-      border-color: var(--success-color);
     }
     .main-chat {
       flex: 1;
@@ -328,22 +325,21 @@
     </div>
 
     <div class="param-group">
-      <div style="display: flex; justify-content: space-between; align-items: center;">
-        <label>System Instructions</label>
-        <button id="savePromptBtn" class="btn-save-prompt" onclick="saveSystemPrompt()">💾 Save to File</button>
-      </div>
+      <label>System Instructions</label>
       <textarea id="sysPrompt" placeholder="Loading prompt..."></textarea>
     </div>
 
     <div class="param-group">
       <label>Temperature (<span id="tempVal">0.7</span>)</label>
-      <input type="range" id="tempSlider" min="0" max="1" step="0.05" value="0.7" oninput="document.getElementById('tempVal').innerText=this.value">
+      <input type="range" id="tempSlider" min="0" max="1" step="0.05" value="0.7" oninput="document.getElementById('tempVal').innerText=this.value" onchange="autoSaveSettings()">
     </div>
 
     <div class="param-group">
       <label>Max Tokens</label>
-      <input type="number" id="maxTokens" value="2048" step="128" min="128" max="8192">
+      <input type="number" id="maxTokens" value="2048" step="128" min="128" max="8192" onchange="autoSaveSettings()">
     </div>
+
+    <button id="saveAllBtn" class="btn-save-settings" onclick="saveAllSettings()">💾 Save Settings to Config</button>
 
     <button onclick="clearChat()" style="background: transparent; border: 1px solid var(--border-color); color: var(--text-muted); padding: 0.5rem; border-radius: 6px; cursor: pointer; margin-top: auto;">Clear Conversation</button>
   </aside>
@@ -361,7 +357,7 @@
     <div class="messages-container" id="messagesBox">
       <div class="message assistant">
         <div class="bubble">
-          👋 Welcome! The server is running on your <strong>GTX 1080 Ti (11 GB VRAM)</strong>. Edit and save system instructions anytime on the left.
+          👋 Welcome! The server is running on your <strong>GTX 1080 Ti (11 GB VRAM)</strong>. Change temperature or system prompt on the left and click Save Settings to persist them.
         </div>
       </div>
     </div>
@@ -399,37 +395,49 @@
     }
     initConfig();
 
-    // Save System Prompt to system_prompt.txt
-    async function saveSystemPrompt() {
-      const btn = document.getElementById('savePromptBtn');
-      const text = document.getElementById('sysPrompt').value;
-      btn.innerText = 'Saving...';
-      btn.disabled = true;
+    // Auto save on slider/input change
+    function autoSaveSettings() {
+      saveAllSettings(false);
+    }
+
+    // Save All Settings to config.json & system_prompt.txt
+    async function saveAllSettings(isExplicitClick = true) {
+      const btn = document.getElementById('saveAllBtn');
+      const temp = parseFloat(document.getElementById('tempSlider').value);
+      const maxTok = parseInt(document.getElementById('maxTokens').value);
+      const prompt = document.getElementById('sysPrompt').value;
+
+      if (isExplicitClick) {
+        btn.innerText = 'Saving...';
+        btn.disabled = true;
+      }
 
       try {
-        const res = await fetch('/api/save-system-prompt', {
+        const res = await fetch('/api/save-config', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ system_prompt: text })
+          body: JSON.stringify({
+            temperature: temp,
+            max_tokens: maxTok,
+            system_prompt: prompt
+          })
         });
         const data = await res.json();
         if (data.status === 'success') {
-          btn.innerText = '✔ Saved!';
-          btn.className = 'btn-save-prompt saved';
+          btn.innerText = '✔ Saved to config.json!';
+          btn.className = 'btn-save-settings saved';
           setTimeout(() => {
-            btn.innerText = '💾 Save to File';
-            btn.className = 'btn-save-prompt';
+            btn.innerText = '💾 Save Settings to Config';
+            btn.className = 'btn-save-settings';
             btn.disabled = false;
           }, 2000);
-        } else {
-          alert('Error saving system prompt.');
-          btn.innerText = '💾 Save to File';
-          btn.disabled = false;
         }
       } catch (err) {
-        alert('Network error saving system prompt: ' + err.message);
-        btn.innerText = '💾 Save to File';
-        btn.disabled = false;
+        if (isExplicitClick) {
+          alert('Error saving settings: ' + err.message);
+          btn.innerText = '💾 Save Settings to Config';
+          btn.disabled = false;
+        }
       }
     }
 
