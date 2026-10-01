@@ -38,8 +38,9 @@
       border-right: 1px solid var(--border-color);
       display: flex;
       flex-direction: column;
-      padding: 1.25rem;
-      gap: 1.15rem;
+      padding: 1.15rem;
+      gap: 0.95rem;
+      overflow-y: auto;
     }
     .logo-container {
       display: flex;
@@ -48,27 +49,27 @@
       font-weight: 700;
       font-size: 1.15rem;
       color: var(--accent-color);
-      padding-bottom: 0.75rem;
+      padding-bottom: 0.5rem;
       border-bottom: 1px solid var(--border-color);
     }
     .gpu-card {
       background: #0f172a88;
       border: 1px solid var(--border-color);
       border-radius: 8px;
-      padding: 1rem;
-      font-size: 0.85rem;
+      padding: 0.85rem;
+      font-size: 0.82rem;
     }
     .gpu-card h4 {
       color: #38bdf8;
-      margin-bottom: 0.5rem;
-      font-size: 0.9rem;
+      margin-bottom: 0.4rem;
+      font-size: 0.88rem;
       display: flex;
       justify-content: space-between;
     }
     .stat-row {
       display: flex;
       justify-content: space-between;
-      margin-top: 0.35rem;
+      margin-top: 0.3rem;
       color: var(--text-muted);
     }
     .stat-row span:last-child {
@@ -80,7 +81,7 @@
       height: 6px;
       background: var(--bg-tertiary);
       border-radius: 3px;
-      margin-top: 0.5rem;
+      margin-top: 0.4rem;
       overflow: hidden;
     }
     .progress-fill {
@@ -92,19 +93,19 @@
     .param-group {
       display: flex;
       flex-direction: column;
-      gap: 0.4rem;
-      font-size: 0.85rem;
+      gap: 0.35rem;
+      font-size: 0.82rem;
     }
     .param-group label { color: var(--text-muted); }
     .param-group input, .param-group textarea, .param-group select {
       background: var(--bg-primary);
       border: 1px solid var(--border-color);
       color: var(--text-main);
-      padding: 0.5rem;
+      padding: 0.45rem;
       border-radius: 6px;
-      font-size: 0.85rem;
+      font-size: 0.82rem;
     }
-    .param-group textarea { resize: vertical; height: 85px; }
+    .param-group textarea { resize: vertical; height: 75px; }
     .btn-save-settings {
       background: #0284c7;
       border: none;
@@ -131,7 +132,7 @@
       position: relative;
     }
     .chat-header {
-      padding: 1rem 1.5rem;
+      padding: 0.9rem 1.5rem;
       background: var(--bg-secondary);
       border-bottom: 1px solid var(--border-color);
       display: flex;
@@ -145,6 +146,10 @@
       border-radius: 9999px;
       font-size: 0.75rem;
       font-weight: 600;
+    }
+    .badge.reloading {
+      background: #854d0e;
+      color: #fde047;
     }
     .messages-container {
       flex: 1;
@@ -324,6 +329,22 @@
       </div>
     </div>
 
+    <!-- GPU Offload Controls -->
+    <div class="param-group">
+      <label>GPU Layers Offload (<span id="gpuLayersVal">99 (Full VRAM)</span>)</label>
+      <input type="range" id="gpuLayersSlider" min="0" max="99" step="1" value="99" oninput="updateGpuLayerLabel(this.value)">
+    </div>
+
+    <div class="param-group">
+      <label>Context Window</label>
+      <select id="ctxSelect">
+        <option value="2048">2,048 tokens</option>
+        <option value="4096">4,096 tokens</option>
+        <option value="8192" selected>8,192 tokens (Recommended)</option>
+        <option value="16384">16,384 tokens (High VRAM)</option>
+      </select>
+    </div>
+
     <div class="param-group">
       <label>System Instructions</label>
       <textarea id="sysPrompt" placeholder="Loading prompt..."></textarea>
@@ -331,33 +352,33 @@
 
     <div class="param-group">
       <label>Temperature (<span id="tempVal">0.7</span>)</label>
-      <input type="range" id="tempSlider" min="0" max="1" step="0.05" value="0.7" oninput="document.getElementById('tempVal').innerText=this.value" onchange="autoSaveSettings()">
+      <input type="range" id="tempSlider" min="0" max="1" step="0.05" value="0.7" oninput="document.getElementById('tempVal').innerText=this.value">
     </div>
 
     <div class="param-group">
       <label>Max Tokens</label>
-      <input type="number" id="maxTokens" value="2048" step="128" min="128" max="8192" onchange="autoSaveSettings()">
+      <input type="number" id="maxTokens" value="2048" step="128" min="128" max="8192">
     </div>
 
-    <button id="saveAllBtn" class="btn-save-settings" onclick="saveAllSettings()">💾 Save Settings to Config</button>
+    <button id="saveAllBtn" class="btn-save-settings" onclick="saveAllSettings()">💾 Save & Apply Settings</button>
 
-    <button onclick="clearChat()" style="background: transparent; border: 1px solid var(--border-color); color: var(--text-muted); padding: 0.5rem; border-radius: 6px; cursor: pointer; margin-top: auto;">Clear Conversation</button>
+    <button onclick="clearChat()" style="background: transparent; border: 1px solid var(--border-color); color: var(--text-muted); padding: 0.4rem; border-radius: 6px; cursor: pointer; margin-top: auto; font-size: 0.8rem;">Clear Conversation</button>
   </aside>
 
   <!-- Main Chat -->
   <main class="main-chat">
     <header class="chat-header">
       <div>
-        <strong id="activeModel">Gemma 3n E4B (100% GPU Offload)</strong>
+        <strong id="activeModel">Gemma 3n E4B</strong>
         <p style="font-size: 0.75rem; color: var(--text-muted);">OpenAI Endpoint: <code>http://127.0.0.1:8000/v1/chat/completions</code></p>
       </div>
-      <span class="badge">● CUDA 12.4 Online</span>
+      <span class="badge" id="statusBadge">● CUDA 12.4 Online</span>
     </header>
 
     <div class="messages-container" id="messagesBox">
       <div class="message assistant">
         <div class="bubble">
-          👋 Welcome! The server is running on your <strong>GTX 1080 Ti (11 GB VRAM)</strong>. Change temperature or system prompt on the left and click Save Settings to persist them.
+          👋 Welcome! The server is running on your <strong>GTX 1080 Ti (11 GB VRAM)</strong>. Adjust GPU layers, temperature, or system instructions on the left anytime.
         </div>
       </div>
     </div>
@@ -379,6 +400,17 @@
     let currentAbortController = null;
     let pendingBase64Image = null;
 
+    function updateGpuLayerLabel(val) {
+      const v = parseInt(val);
+      if (v >= 36) {
+        document.getElementById('gpuLayersVal').innerText = `${v} (Full GPU)`;
+      } else if (v === 0) {
+        document.getElementById('gpuLayersVal').innerText = `0 (CPU Only)`;
+      } else {
+        document.getElementById('gpuLayersVal').innerText = `${v} Layers`;
+      }
+    }
+
     // Load initial config from config.json & system_prompt.txt
     async function initConfig() {
       try {
@@ -390,27 +422,30 @@
           document.getElementById('tempVal').innerText = data.temperature;
         }
         if (data.max_tokens) document.getElementById('maxTokens').value = data.max_tokens;
-        if (data.model_alias) document.getElementById('activeModel').innerText = data.model_alias + ' (100% GPU Offload)';
+        if (data.context_size) document.getElementById('ctxSelect').value = data.context_size;
+        if (data.gpu_layers !== undefined) {
+          document.getElementById('gpuLayersSlider').value = data.gpu_layers;
+          updateGpuLayerLabel(data.gpu_layers);
+        }
+        if (data.model_alias) {
+          document.getElementById('activeModel').innerText = data.model_alias;
+        }
       } catch (e) {}
     }
     initConfig();
 
-    // Auto save on slider/input change
-    function autoSaveSettings() {
-      saveAllSettings(false);
-    }
-
-    // Save All Settings to config.json & system_prompt.txt
-    async function saveAllSettings(isExplicitClick = true) {
+    // Save Settings to config.json and reload model if GPU layers changed
+    async function saveAllSettings() {
       const btn = document.getElementById('saveAllBtn');
+      const badge = document.getElementById('statusBadge');
       const temp = parseFloat(document.getElementById('tempSlider').value);
       const maxTok = parseInt(document.getElementById('maxTokens').value);
       const prompt = document.getElementById('sysPrompt').value;
+      const layers = parseInt(document.getElementById('gpuLayersSlider').value);
+      const ctx = parseInt(document.getElementById('ctxSelect').value);
 
-      if (isExplicitClick) {
-        btn.innerText = 'Saving...';
-        btn.disabled = true;
-      }
+      btn.innerText = 'Saving...';
+      btn.disabled = true;
 
       try {
         const res = await fetch('/api/save-config', {
@@ -419,25 +454,38 @@
           body: JSON.stringify({
             temperature: temp,
             max_tokens: maxTok,
-            system_prompt: prompt
+            system_prompt: prompt,
+            gpu_layers: layers,
+            context_size: ctx
           })
         });
         const data = await res.json();
         if (data.status === 'success') {
-          btn.innerText = '✔ Saved to config.json!';
-          btn.className = 'btn-save-settings saved';
-          setTimeout(() => {
-            btn.innerText = '💾 Save Settings to Config';
-            btn.className = 'btn-save-settings';
-            btn.disabled = false;
-          }, 2000);
+          if (data.hardware_reloaded) {
+            btn.innerText = '🔄 Reloading GPU VRAM...';
+            badge.innerText = '⏳ Reloading Model...';
+            badge.className = 'badge reloading';
+            setTimeout(async () => {
+              btn.innerText = '✔ GPU Layers Updated!';
+              btn.className = 'btn-save-settings saved';
+              badge.innerText = '● CUDA 12.4 Online';
+              badge.className = 'badge';
+              btn.disabled = false;
+            }, 3000);
+          } else {
+            btn.innerText = '✔ Saved!';
+            btn.className = 'btn-save-settings saved';
+            setTimeout(() => {
+              btn.innerText = '💾 Save & Apply Settings';
+              btn.className = 'btn-save-settings';
+              btn.disabled = false;
+            }, 2000);
+          }
         }
       } catch (err) {
-        if (isExplicitClick) {
-          alert('Error saving settings: ' + err.message);
-          btn.innerText = '💾 Save Settings to Config';
-          btn.disabled = false;
-        }
+        alert('Error saving settings: ' + err.message);
+        btn.innerText = '💾 Save & Apply Settings';
+        btn.disabled = false;
       }
     }
 

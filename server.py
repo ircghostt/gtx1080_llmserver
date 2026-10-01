@@ -43,6 +43,8 @@ class SaveConfigRequest(BaseModel):
     top_p: Optional[float] = None
     top_k: Optional[int] = None
     system_prompt: Optional[str] = None
+    gpu_layers: Optional[int] = None
+    context_size: Optional[int] = None
 
 @app.on_event("startup")
 def on_startup():
@@ -92,9 +94,8 @@ def get_current_config():
 
 @app.post("/api/save-config")
 def save_config(payload: SaveConfigRequest):
-    """Saves updated sampling parameters to config.json and system_prompt.txt"""
+    """Saves updated parameters to config.json and reloads model if hardware layers changed"""
     try:
-        # 1. Update config.json on disk
         cfg_data = {}
         if os.path.exists(CONFIG_JSON_PATH):
             with open(CONFIG_JSON_PATH, "r", encoding="utf-8") as f:
@@ -102,6 +103,10 @@ def save_config(payload: SaveConfigRequest):
 
         if "generation_defaults" not in cfg_data:
             cfg_data["generation_defaults"] = {}
+        if "hardware_gtx1080_settings" not in cfg_data:
+            cfg_data["hardware_gtx1080_settings"] = {}
+
+        hardware_changed = False
 
         if payload.temperature is not None:
             cfg_data["generation_defaults"]["temperature"] = payload.temperature
@@ -119,21 +124,39 @@ def save_config(payload: SaveConfigRequest):
             cfg_data["generation_defaults"]["top_k"] = payload.top_k
             config.top_k = payload.top_k
 
+        if payload.gpu_layers is not None:
+            old_val = cfg_data["hardware_gtx1080_settings"].get("gpu_layers_offload")
+            if old_val != payload.gpu_layers:
+                cfg_data["hardware_gtx1080_settings"]["gpu_layers_offload"] = payload.gpu_layers
+                config.n_gpu_layers = payload.gpu_layers
+                hardware_changed = True
+
+        if payload.context_size is not None:
+            old_ctx = cfg_data["hardware_gtx1080_settings"].get("context_size_tokens")
+            if old_ctx != payload.context_size:
+                cfg_data["hardware_gtx1080_settings"]["context_size_tokens"] = payload.context_size
+                config.n_ctx = payload.context_size
+                hardware_changed = True
+
         with open(CONFIG_JSON_PATH, "w", encoding="utf-8") as f:
             json.dump(cfg_data, f, indent=2)
 
-        # 2. Update system_prompt.txt if provided
         if payload.system_prompt is not None:
             with open(config.system_prompt_file, "w", encoding="utf-8") as f:
                 f.write(payload.system_prompt.strip())
             config.system_prompt = payload.system_prompt.strip()
 
-        logger.info("Updated settings successfully written to config.json and memory.")
+        if hardware_changed:
+            logger.info("Hardware layer/context configuration changed. Triggering engine reload...")
+            manager.restart()
+
+        logger.info("Settings successfully written to config.json and memory.")
         return {
             "status": "success",
             "message": "Settings saved to config.json",
-            "temperature": config.temperature,
-            "max_tokens": config.max_tokens
+            "hardware_reloaded": hardware_changed,
+            "gpu_layers": config.n_gpu_layers,
+            "context_size": config.n_ctx
         }
     except Exception as e:
         logger.error(f"Failed to save settings: {e}")
@@ -141,7 +164,6 @@ def save_config(payload: SaveConfigRequest):
 
 @app.post("/api/save-system-prompt")
 def save_system_prompt(payload: SaveConfigRequest):
-    """Compatibility endpoint for prompt saving"""
     return save_config(payload)
 
 @app.get("/api/gpu-stats")

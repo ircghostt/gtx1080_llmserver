@@ -5,7 +5,7 @@ import atexit
 import logging
 import urllib.request
 import urllib.error
-from config import config, LLAMA_SERVER_EXE, BIN_DIR
+from config import config, load_config, LLAMA_SERVER_EXE, BIN_DIR
 
 logging.basicConfig(level=logging.INFO, format="[%(asctime)s] %(levelname)s: %(message)s")
 logger = logging.getLogger("backend_manager")
@@ -16,31 +16,34 @@ class BackendManager:
         self.backend_url = f"http://{config.backend_host}:{config.backend_port}"
 
     def start(self):
-        if not os.path.exists(config.model_path):
-            raise FileNotFoundError(f"Model file does not exist at: {config.model_path}")
+        # Refresh config in case config.json was modified
+        current_cfg = load_config()
+
+        if not os.path.exists(current_cfg.model_path):
+            raise FileNotFoundError(f"Model file does not exist at: {current_cfg.model_path}")
 
         if not os.path.exists(LLAMA_SERVER_EXE):
             raise FileNotFoundError(f"llama-server executable not found at: {LLAMA_SERVER_EXE}")
 
         cmd = [
             LLAMA_SERVER_EXE,
-            "-m", config.model_path,
-            "-ngl", str(config.n_gpu_layers),
-            "-c", str(config.n_ctx),
-            "-b", str(config.n_batch),
-            "-t", str(config.n_threads),
-            "--host", config.backend_host,
-            "--port", str(config.backend_port),
-            "--alias", config.model_alias
+            "-m", current_cfg.model_path,
+            "-ngl", str(current_cfg.n_gpu_layers),
+            "-c", str(current_cfg.n_ctx),
+            "-b", str(current_cfg.n_batch),
+            "-t", str(current_cfg.n_threads),
+            "--host", current_cfg.backend_host,
+            "--port", str(current_cfg.backend_port),
+            "--alias", current_cfg.model_alias
         ]
 
-        if config.mmproj_file and os.path.exists(config.mmproj_file):
-            logger.info(f"Multimodal vision projector detected: {config.mmproj_file}")
-            cmd.extend(["--mmproj", config.mmproj_file])
+        if current_cfg.mmproj_file and os.path.exists(current_cfg.mmproj_file):
+            logger.info(f"Multimodal vision projector detected: {current_cfg.mmproj_file}")
+            cmd.extend(["--mmproj", current_cfg.mmproj_file])
         else:
             logger.info("Running in standard text mode (no mmproj projector attached).")
 
-        logger.info(f"Starting GTX 1080 Ti hardware engine on port {config.backend_port}...")
+        logger.info(f"Starting GTX 1080 Ti hardware engine on port {current_cfg.backend_port} with {current_cfg.n_gpu_layers} GPU layers...")
         logger.info(f"Command: {' '.join(cmd)}")
 
         env = os.environ.copy()
@@ -85,5 +88,11 @@ class BackendManager:
             except subprocess.TimeoutExpired:
                 self.process.kill()
             self.process = None
+
+    def restart(self):
+        logger.info("Restarting backend engine to apply new hardware/layer settings...")
+        self.stop()
+        time.sleep(0.5)
+        self.start()
 
 manager = BackendManager()
