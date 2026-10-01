@@ -14,6 +14,7 @@
       --bg-tertiary: #334155;
       --accent-color: #38bdf8;
       --accent-hover: #0284c7;
+      --success-color: #10b981;
       --danger-color: #ef4444;
       --danger-hover: #dc2626;
       --text-main: #f8fafc;
@@ -38,7 +39,7 @@
       display: flex;
       flex-direction: column;
       padding: 1.25rem;
-      gap: 1.25rem;
+      gap: 1.15rem;
     }
     .logo-container {
       display: flex;
@@ -104,6 +105,28 @@
       font-size: 0.85rem;
     }
     .param-group textarea { resize: vertical; height: 85px; }
+    .prompt-actions {
+      display: flex;
+      justify-content: flex-end;
+      margin-top: 0.25rem;
+    }
+    .btn-save-prompt {
+      background: var(--bg-tertiary);
+      border: 1px solid var(--border-color);
+      color: var(--text-main);
+      padding: 0.3rem 0.75rem;
+      border-radius: 5px;
+      font-size: 0.78rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+    .btn-save-prompt:hover { background: #475569; }
+    .btn-save-prompt.saved {
+      background: var(--success-color);
+      color: #ffffff;
+      border-color: var(--success-color);
+    }
     .main-chat {
       flex: 1;
       display: flex;
@@ -178,7 +201,6 @@
       font-size: 0.75rem;
       color: var(--text-muted);
     }
-    /* Input Container */
     .input-container {
       padding: 1rem 1.25rem;
       background: var(--bg-secondary);
@@ -306,7 +328,10 @@
     </div>
 
     <div class="param-group">
-      <label>System Instructions (system_prompt.txt)</label>
+      <div style="display: flex; justify-content: space-between; align-items: center;">
+        <label>System Instructions</label>
+        <button id="savePromptBtn" class="btn-save-prompt" onclick="saveSystemPrompt()">💾 Save to File</button>
+      </div>
       <textarea id="sysPrompt" placeholder="Loading prompt..."></textarea>
     </div>
 
@@ -336,7 +361,7 @@
     <div class="messages-container" id="messagesBox">
       <div class="message assistant">
         <div class="bubble">
-          👋 Welcome! The server is running on your <strong>GTX 1080 Ti (11 GB VRAM)</strong>. You can chat, upload photos 📷, or hit Stop anytime.
+          👋 Welcome! The server is running on your <strong>GTX 1080 Ti (11 GB VRAM)</strong>. Edit and save system instructions anytime on the left.
         </div>
       </div>
     </div>
@@ -373,6 +398,40 @@
       } catch (e) {}
     }
     initConfig();
+
+    // Save System Prompt to system_prompt.txt
+    async function saveSystemPrompt() {
+      const btn = document.getElementById('savePromptBtn');
+      const text = document.getElementById('sysPrompt').value;
+      btn.innerText = 'Saving...';
+      btn.disabled = true;
+
+      try {
+        const res = await fetch('/api/save-system-prompt', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ system_prompt: text })
+        });
+        const data = await res.json();
+        if (data.status === 'success') {
+          btn.innerText = '✔ Saved!';
+          btn.className = 'btn-save-prompt saved';
+          setTimeout(() => {
+            btn.innerText = '💾 Save to File';
+            btn.className = 'btn-save-prompt';
+            btn.disabled = false;
+          }, 2000);
+        } else {
+          alert('Error saving system prompt.');
+          btn.innerText = '💾 Save to File';
+          btn.disabled = false;
+        }
+      } catch (err) {
+        alert('Network error saving system prompt: ' + err.message);
+        btn.innerText = '💾 Save to File';
+        btn.disabled = false;
+      }
+    }
 
     // Poll GPU Telemetry
     async function updateTelemetry() {
@@ -494,7 +553,6 @@
       removeImage();
       input.value = '';
 
-      // Format User Content for OpenAI API
       let userApiContent;
       if (attachedImage) {
         userApiContent = [
@@ -508,7 +566,6 @@
       appendMessage('user', text, attachedImage);
       chatHistory.push({ role: 'user', content: userApiContent });
 
-      // Create Assistant Placeholder
       const assistantBubble = appendMessage('assistant', '<span style="color:var(--text-muted);">Thinking...</span>');
       const speedBadge = document.createElement('div');
       speedBadge.className = 'speed-badge';

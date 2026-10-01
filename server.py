@@ -5,6 +5,7 @@ import subprocess
 import logging
 import asyncio
 import requests
+from pydantic import BaseModel
 from fastapi import FastAPI, Request, Response, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
@@ -34,6 +35,9 @@ static_dir = os.path.join(os.path.dirname(__file__), "static")
 if not os.path.exists(static_dir):
     os.makedirs(static_dir, exist_ok=True)
 app.mount("/static", StaticFiles(directory=static_dir), name="static")
+
+class SavePromptRequest(BaseModel):
+    system_prompt: str
 
 @app.on_event("startup")
 def on_startup():
@@ -80,6 +84,20 @@ def get_current_config():
         "gpu_layers": current_cfg.n_gpu_layers,
         "has_vision": has_vision
     }
+
+@app.post("/api/save-system-prompt")
+def save_system_prompt(payload: SavePromptRequest):
+    """Saves updated system prompt to system_prompt.txt and updates runtime memory"""
+    try:
+        prompt_file = config.system_prompt_file
+        with open(prompt_file, "w", encoding="utf-8") as f:
+            f.write(payload.system_prompt.strip())
+        config.system_prompt = payload.system_prompt.strip()
+        logger.info(f"Updated system prompt saved to: {prompt_file}")
+        return {"status": "success", "message": "System prompt saved successfully"}
+    except Exception as e:
+        logger.error(f"Failed to save system prompt: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/gpu-stats")
 def gpu_stats():
