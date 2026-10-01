@@ -46,15 +46,26 @@ class SaveConfigRequest(BaseModel):
     gpu_layers: Optional[int] = None
     context_size: Optional[int] = None
 
+# Global persistent HTTP client with no read timeout
+http_client: Optional[httpx.AsyncClient] = None
+
 @app.on_event("startup")
-def on_startup():
+async def on_startup():
+    global http_client
     logger.info("Initializing backend engine with config.json settings...")
     manager.start()
+    # Configure shared persistent client with connection pool and infinite read timeout
+    timeout_config = httpx.Timeout(timeout=None, connect=10.0)
+    limits = httpx.Limits(max_keepalive_connections=20, max_connections=50)
+    http_client = httpx.AsyncClient(timeout=timeout_config, limits=limits)
     logger.info("GTX 1080 Ti LLM Gateway ready.")
 
 @app.on_event("shutdown")
-def on_shutdown():
-    logger.info("Stopping backend engine...")
+async def on_shutdown():
+    global http_client
+    logger.info("Stopping backend engine and HTTP client...")
+    if http_client:
+        await http_client.aclose()
     manager.stop()
 
 @app.get("/", response_class=HTMLResponse)
@@ -229,6 +240,7 @@ def list_models():
 
 @app.post("/v1/chat/completions")
 async def chat_completions(request: Request):
+    global http_client
     try:
         body = await request.json()
         body["model"] = config.model_alias
@@ -242,17 +254,18 @@ async def chat_completions(request: Request):
         is_stream = body.get("stream", False)
         backend_url = f"{manager.backend_url}/v1/chat/completions"
 
+        client = http_client or httpx.AsyncClient(timeout=httpx.Timeout(timeout=None, connect=10.0))
+
         if is_stream:
             async def stream_response():
                 try:
-                    async with httpx.AsyncClient(timeout=120.0) as client:
-                        async with client.stream("POST", backend_url, json=body) as resp:
-                            async for chunk in resp.aiter_bytes():
-                                if await request.is_disconnected():
-                                    logger.info("Client aborted request. Halting generation.")
-                                    break
-                                if chunk:
-                                    yield chunk
+                    async with client.stream("POST", backend_url, json=body) as resp:
+                        async for chunk in resp.aiter_bytes():
+                            if await request.is_disconnected():
+                                logger.info("Client aborted request. Halting generation.")
+                                break
+                            if chunk:
+                                yield chunk
                 except Exception as ex:
                     logger.info(f"Stream finished/aborted: {ex}")
 
@@ -266,9 +279,8 @@ async def chat_completions(request: Request):
                 }
             )
         else:
-            async with httpx.AsyncClient(timeout=120.0) as client:
-                resp = await client.post(backend_url, json=body)
-                return JSONResponse(status_code=resp.status_code, content=resp.json())
+            resp = await client.post(backend_url, json=body)
+            return JSONResponse(status_code=resp.status_code, content=resp.json())
 
     except Exception as e:
         logger.error(f"Chat completion error: {e}", exc_info=True)
@@ -279,30 +291,31 @@ async def chat_completions(request: Request):
 
 @app.post("/v1/completions")
 async def text_completions(request: Request):
+    global http_client
     try:
         body = await request.json()
         body["model"] = config.model_alias
         is_stream = body.get("stream", False)
         backend_url = f"{manager.backend_url}/v1/completions"
 
+        client = http_client or httpx.AsyncClient(timeout=httpx.Timeout(timeout=None, connect=10.0))
+
         if is_stream:
             async def stream_response():
                 try:
-                    async with httpx.AsyncClient(timeout=120.0) as client:
-                        async with client.stream("POST", backend_url, json=body) as resp:
-                            async for chunk in resp.aiter_bytes():
-                                if await request.is_disconnected():
-                                    break
-                                if chunk:
-                                    yield chunk
+                    async with client.stream("POST", backend_url, json=body) as resp:
+                        async for chunk in resp.aiter_bytes():
+                            if await request.is_disconnected():
+                                break
+                            if chunk:
+                                yield chunk
                 except Exception as ex:
                     logger.info(f"Stream finished/aborted: {ex}")
 
             return StreamingResponse(stream_response(), media_type="text/event-stream")
         else:
-            async with httpx.AsyncClient(timeout=120.0) as client:
-                resp = await client.post(backend_url, json=body)
-                return JSONResponse(status_code=resp.status_code, content=resp.json())
+            resp = await client.post(backend_url, json=body)
+            return JSONResponse(status_code=resp.status_code, content=resp.json())
     except Exception as e:
         logger.error(f"Completion error: {e}", exc_info=True)
         return JSONResponse(
